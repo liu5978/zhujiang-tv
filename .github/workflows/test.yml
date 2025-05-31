@@ -21,8 +21,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - userName: q215613905
-            repoName: TVBoxOS
+          - userName: liu5978
+            repoName: zhujiang-tv
             branchName: main
             pythonVersion: 3.8
             java_ver: 11
@@ -65,7 +65,6 @@ jobs:
         if: ${{ env.commit }}
         working-directory: TVBoxOSC
         run: |
-          # 生成local.properties（含SDK和Python路径）
           echo "sdk.dir=/opt/android-sdk" > local.properties
           echo "PYTHON_HOME=${{ steps.python-setup.pythonLocation }}" >> local.properties
           echo "已创建local.properties文件"
@@ -90,22 +89,35 @@ jobs:
             sed -i "/jitpack.io/a\        maven { url 'https://o0halflife0o.github.io/crosswalk/releases/crosswalk/android/maven2' }" build.gradle
           fi
           
-          # 配置Chaquopy Python路径（优先写入build.gradle，失败则写入gradle.properties）
           pythonPath=${{ steps.python-setup.pythonLocation }}
           echo "配置Chaquopy Python路径: $pythonPath"
           
-          # 方案1：尝试在chaquopy块中添加配置
-          if grep -q 'chaquopy {' app/build.gradle; then
-            sed -i "/chaquopy {/a\    buildPython = '$pythonPath'" app/build.gradle
-            echo "已在chaquopy块中添加buildPython配置"
-          else
-            # 方案2：在android块中添加chaquopy配置
-            if grep -q 'android {' app/build.gradle; then
-              sed -i "/android {/a\    chaquopy {\n        buildPython = '$pythonPath'\n    }" app/build.gradle
-              echo "已在android块中添加chaquopy配置"
+          pyramidBuildGradle="pyramid/build.gradle"
+          if [ -f "$pyramidBuildGradle" ]; then
+            echo "找到pyramid模块，配置其Chaquopy路径"
+            if grep -q 'chaquopy {' "$pyramidBuildGradle"; then
+              sed -i "/chaquopy {/a\    buildPython = '$pythonPath'" "$pyramidBuildGradle"
+              echo "已在pyramid的chaquopy块中添加配置"
             else
-              echo "警告：未找到android或chaquopy块，在gradle.properties中手动配置"
-              echo "chaquopy.buildPython=$pythonPath" >> gradle.properties
+              if grep -q 'android {' "$pyramidBuildGradle"; then
+                sed -i "/android {/a\    chaquopy {\n        buildPython = '$pythonPath'\n    }" "$pyramidBuildGradle"
+                echo "已在pyramid的android块中添加chaquopy配置"
+              else
+                echo "警告：pyramid/build.gradle未找到配置块，在gradle.properties中配置"
+                echo "chaquopy.buildPython=$pythonPath" >> gradle.properties
+              fi
+            fi
+          else
+            echo "未找到pyramid模块，在根build.gradle中配置"
+            if grep -q 'chaquopy {' build.gradle; then
+              sed -i "/chaquopy {/a\    buildPython = '$pythonPath'" build.gradle
+            else
+              if grep -q 'android {' build.gradle; then
+                sed -i "/android {/a\    chaquopy {\n        buildPython = '$pythonPath'\n    }" build.gradle
+              else
+                echo "警告：根build.gradle未找到配置块，在gradle.properties中配置"
+                echo "chaquopy.buildPython=$pythonPath" >> gradle.properties
+              fi
             fi
           fi
       
@@ -113,9 +125,16 @@ jobs:
         if: ${{ env.commit }}
         working-directory: TVBoxOSC
         run: |
-          echo "=== app/build.gradle 中的Chaquopy配置 ==="
-          grep -A 5 'chaquopy' app/build.gradle || echo "未找到chaquopy配置，检查gradle.properties"
-          echo "Python路径: ${{ steps.python-setup.pythonLocation }}"
+          echo "=== pyramid/build.gradle 中的Chaquopy配置 ==="
+          if [ -f pyramid/build.gradle ]; then
+            grep -A 5 'chaquopy' pyramid/build.gradle || echo "pyramid模块未找到chaquopy配置，检查gradle.properties"
+          else
+            echo "未找到pyramid模块，检查根build.gradle配置:"
+            grep -A 5 'chaquopy' build.gradle || echo "根目录未找到chaquopy配置，检查gradle.properties"
+          fi
+          echo "Python实际路径: $pythonPath"
+          echo "gradle.properties中的配置:"
+          grep -i 'chaquopy' gradle.properties || echo "未找到chaquopy配置"
       
       - name: Release Apk Sign
         if: ${{ env.commit }}
