@@ -21,11 +21,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - userName: liu5978
-            repoName: zhujiang-tv
+          - userName: q215613905
+            repoName: TVBoxOS
             branchName: main
-            pythonVersion: 3.8  # 添加Python版本配置
-            java_ver: 11       # 添加Java版本配置
+            pythonVersion: 3.8
+            java_ver: 11
 
     steps:
       - name: Checkout
@@ -65,9 +65,10 @@ jobs:
         if: ${{ env.commit }}
         working-directory: TVBoxOSC
         run: |
-          # 生成local.properties（示例配置，根据项目实际需求修改）
+          # 生成local.properties（含SDK和Python路径）
           echo "sdk.dir=/opt/android-sdk" > local.properties
           echo "PYTHON_HOME=${{ steps.python-setup.pythonLocation }}" >> local.properties
+          echo "已创建local.properties文件"
       
       - name: Extra Modify
         if: ${{ env.commit }}
@@ -81,6 +82,7 @@ jobs:
              sed -i "/versionName/s#[0-9a-zA-Z_\.\'\"-]\+\$#\'${{ env.tag }}\'#" app/build.gradle
              sed -i "/android:text=/s#=\"#=\"${{ env.tag }}\\\\n\\\\n#" app/src/main/res/layout/dialog_about.xml
           fi 
+          
           echo 'crosswalk源，防挂'
           if grep -q 'crosswalk' build.gradle; then
             sed -i "/crosswalk/a\        maven { url 'https://o0halflife0o.github.io/crosswalk/releases/crosswalk/android/maven2' }" build.gradle
@@ -88,22 +90,38 @@ jobs:
             sed -i "/jitpack.io/a\        maven { url 'https://o0halflife0o.github.io/crosswalk/releases/crosswalk/android/maven2' }" build.gradle
           fi
           
-          # 配置Chaquopy的Python路径
-          if grep -q 'chaquopy' app/build.gradle; then
-            sed -i "/chaquopy {/a\    buildPython = '${{ steps.python-setup.pythonLocation }}'" app/build.gradle
+          # 配置Chaquopy Python路径（优先写入build.gradle，失败则写入gradle.properties）
+          pythonPath=${{ steps.python-setup.pythonLocation }}
+          echo "配置Chaquopy Python路径: $pythonPath"
+          
+          # 方案1：尝试在chaquopy块中添加配置
+          if grep -q 'chaquopy {' app/build.gradle; then
+            sed -i "/chaquopy {/a\    buildPython = '$pythonPath'" app/build.gradle
+            echo "已在chaquopy块中添加buildPython配置"
+          else
+            # 方案2：在android块中添加chaquopy配置
+            if grep -q 'android {' app/build.gradle; then
+              sed -i "/android {/a\    chaquopy {\n        buildPython = '$pythonPath'\n    }" app/build.gradle
+              echo "已在android块中添加chaquopy配置"
+            else
+              echo "警告：未找到android或chaquopy块，在gradle.properties中手动配置"
+              echo "chaquopy.buildPython=$pythonPath" >> gradle.properties
+            fi
           fi
       
-      - name: Compress Source Code
+      - name: Verify Chaquopy Config
         if: ${{ env.commit }}
         working-directory: TVBoxOSC
         run: |
-          tar -cJf sourceCode-${{ env.commitS }}.tar.xz --exclude=.git --exclude=.github *
+          echo "=== app/build.gradle 中的Chaquopy配置 ==="
+          grep -A 5 'chaquopy' app/build.gradle || echo "未找到chaquopy配置，检查gradle.properties"
+          echo "Python路径: ${{ steps.python-setup.pythonLocation }}"
       
       - name: Release Apk Sign
         if: ${{ env.commit }}
         working-directory: TVBoxOSC
         run: |
-          signingConfigs='ICAgIHNpZ25pbmdDb25maWdzIHtcCiAgICAgICAgaWYgKHByb2plY3QuaGFzUHJvcGVydHkoIlJFTEVBU0VfU1RPUkVfRklMRSIpKSB7XAogICAgICAgICAgICBteUNvbmZpZyB7XAogICAgICAgICAgICAgICAgc3RvcmVGaWxlIGZpbGUoUkVMRUFTRV9TVE9SRV9GSUxFKVwKICAgICAgICAgICAgICAgIHN0b3JlUGFzc3dvcmQgUkVMRUFTRV9TVE9SRV9QQVNTV09SRFwKICAgICAgICAgICAgICAgIGtleUFsaWFzIFJFTEVBU0VfS0VZX0FMSUFTXAogICAgICAgICAgICAgICAga2V5UGFzc3dvcmQgUkVMRUFTRV9LRVlfUEFTU1dPUkRcCiAgICAgICAgICAgICAgICB2MVNpZ25pbmdFbmFibGVkIHRydWVcCiAgICAgICAgICAgICAgICB2MlNpZ25pbmdFbmFibGVkIHRydWVcCiAgICAgICAgICAgICAgICBlbmFibGVWM1NpZ25pbmcgPSB0cnVlXAogICAgICAgICAgICAgICAgZW5hYmxlVjRTaWduaW5nID0gdHJ1ZVwKICAgICAgICAgICAgfVwKICAgICAgICB9XAogICAgfVwKXA=='
+          signingConfigs='ICAgIHNpZ25pbmdDb25maWdzIHtcCiAgICAgICAgaWYgKHByb2plY3QuaGFzUHJvcGVydHkoIlJFTEVBU0VfU1RPUkVfRklMRSIpKSB7XAogICAgICAgICAgICBteUNvbmZpZyB7XAogICAgICAgICAgICAgICAgc3RvcmVGaWxlIGZpbGUoUkVMRUFTRV9TVE9SRV9GSUxFKVwKICAgICAgICAgICAgICAgIHN0b3JlUGFzc3dvcmQgUkVMRUFTRV9TVE9SRV9QQVNTV09SRFwKICAgICAgICAgICAgICAgIGtleUFsaWFzIFJFTEVBU0VfS0VZX0FMSUFTXAogICAgICAgICAgICAgICAga2V5UGFzc3dvcmQgUkVMRUFTRV9LRVlfUEFTU1dPUkRcCiAgICAgICAgICAgICAgICB2MVNpZ25pbmdFbmFibGVkIHRydWVcCiAgICAgICAgICAgICAgICB2MlNpZ25pbmdFbmFibGVkIHRydWVcCiAgICAgICAgICAgICAgICBlbmFibGVWM1NpZ25pbmcgPSB0cnWMXAogICAgICAgICAgICAgICAgZW5hYmxlVjRTaWduaW5nID0gdHJ1ZVwKICAgICAgICAgICAgfVwKICAgICAgICB9XAogICAgfVwKXA=='
           signingConfig='ICAgICAgICAgICAgaWYgKHByb2plY3QuaGFzUHJvcGVydHkoIlJFTEVBU0VfU1RPUkVfRklMRSIpKSB7XAogICAgICAgICAgICAgICAgc2lnbmluZ0NvbmZpZyBzaWduaW5nQ29uZmlncy5teUNvbmZpZ1wKICAgICAgICAgICAgfVwK'
           signingConfigs="$(echo "$signingConfigs" |base64 -d )"
           signingConfig="$(echo "$signingConfig" |base64 -d )"
@@ -124,14 +142,14 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         if: ${{ env.commit }}
         with:
-          gradle-version: 7.6  # 指定Gradle版本（可选，根据项目需求调整）
+          gradle-version: 7.6
       
       - name: Build With Gradle
         if: ${{ env.commit }}
         working-directory: TVBoxOSC
         run: |
           chmod +x gradlew
-          ./gradlew assembleRelease --build-cache --parallel --daemon --warning-mode all --info
+          ./gradlew assembleRelease --build-cache --parallel --daemon --warning-mode all --debug
       
       - name: Prepare App
         if: ${{ env.commit }}
