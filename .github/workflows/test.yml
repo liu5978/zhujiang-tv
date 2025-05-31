@@ -25,14 +25,14 @@ jobs:
             repoName: zhujiang-tv
             branchName: main
     steps:
-       - name: 安装Python（若CI未预装）
+      - name: 安装Python（若CI未预装）
         uses: actions/setup-python@v4
         with:
         python-version: 3.8
       
       - name: 配置环境变量
-      run: |
-      echo "PYTHON_PATH=$(which python3)" >> $GITHUB_ENV  # Linux/macOS
+        run: |
+        echo "PYTHON_PATH=$(which python3)" >> $GITHUB_ENV  # Linux/macOS
       # Windows环境使用：echo "PYTHON_PATH=D:\Programs\Python\Python38\python.exe" >> %GITHUB_ENV%
       - name: Checkout
         uses: actions/checkout@v4
